@@ -31,12 +31,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # Install the package itself along with 'dev' extras (pytest, build)
-          pip install .[dev]
-          # Add astunparse specifically for older Python if needed by tests/code
-          # if [[ "${{ matrix.python-version }}" == "3.7" || "${{ matrix.python-version }}" == "3.8" ]]; then
-          #   pip install astunparse;
-          # fi
+          pip install -r requirements.txt
 
       - name: Test with pytest
         run: |
