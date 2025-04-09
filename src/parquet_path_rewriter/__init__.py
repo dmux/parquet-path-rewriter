@@ -6,7 +6,7 @@ A tool to modify Python code by rewriting relative paths in '.parquet()' calls
 to be based on a specified root directory using Abstract Syntax Trees (AST).
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from .rewriter import ParquetPathRewriter, rewrite_parquet_paths_in_code
 
