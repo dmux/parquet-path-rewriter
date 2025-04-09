@@ -39,6 +39,7 @@ where = ["src"]
 [dependency-groups]
 dev = [
     "black>=25.1.0",
+    "build[virtualenv]>=1.2.2.post1",
     "pytest>=8.3.5",
     "pytest-cov>=6.1.1",
 ]
