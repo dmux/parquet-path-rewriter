@@ -24,15 +24,20 @@ This is useful in scenarios where code needs to be adapted to run in different e
 pip install parquet-path-rewriter
 ```
 
-
 ## Usage
 
 The primary way to use the library is through the rewrite_parquet_paths_in_code function.
 
 ```python
 from pathlib import Path
+
+# Make sure src is in path if running directly without installation
+# sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
+
 from parquet_path_rewriter import rewrite_parquet_paths_in_code
 
+# --- Example Code ---
+# Simulate a Python script that uses Spark or Pandas to read/write Parquet
 original_python_code = """
 import pyspark.sql
 
@@ -62,10 +67,23 @@ final_df.write.mode("overwrite").parquet(path="final_output/report_data") # Uses
 # Example with an absolute path (should not be changed)
 logs_df = spark.read.parquet("/mnt/shared/logs/app_logs.parquet")
 
+# S3 example (should be rewritten)
+s3_df = spark.read.parquet("s3://mybucket/data/2023/spark_logs")
+
+# Write to S3 (should be rewritten)
+s3_df.write.mode("overwrite").parquet("s3://mybucket/output/processed_logs")
+
 print("ETL process finished.")
 """
 
+# --- Library Usage ---
+
+# Define the base directory where the relative paths should point
+# This would typically be determined by your execution environment or configuration
+# Use absolute paths for clarity
 data_root_directory = Path("/user/project/data").resolve()
+
+s3_rewrite_prefix = "s3://newbucket/data/2023"
 
 print("-" * 30)
 print(f"Base Path: {data_root_directory}")
@@ -75,8 +93,9 @@ print(original_python_code)
 print("-" * 30)
 
 try:
+    # Call the library function to rewrite the code
     modified_code, rewritten_map, identified_inputs = rewrite_parquet_paths_in_code(
-        code_string=original_python_code, base_path=data_root_directory
+        code_string=original_python_code, base_path=data_root_directory, s3_rewrite_prefix=s3_rewrite_prefix
     )
 
     print("Modified Code:")
@@ -108,33 +127,42 @@ except Exception as e:
 
 ```
 
-
 ## How it Works
-The library parses the input Python code string into an Abstract Syntax Tree (AST) using Python's built-in ast module. It then walks through this tree using a custom ast.NodeTransformer. When it encounters a function call node:
 
-1. It checks if the called attribute is named parquet.
+The library parses the input Python code string into an Abstract Syntax Tree (AST) using Python's built-in `ast` module. It then walks through this tree using a custom `ast.NodeTransformer`. When it encounters a function call node:
 
-2. It analyzes the call chain (e.g., spark.read.parquet) to guess if it's a read or write operation.
+1. It checks if the called attribute is named `parquet`.
 
-3. It looks for a string literal path in the arguments (first positional or path=...).
+2. It analyzes the call chain (e.g., `spark.read.parquet`) to heuristically determine whether it's a **read** or **write** operation.
 
-4. If a relative path string is found, it constructs a new path by joining the provided base_path with the relative path.
+3. It searches for a string literal path in the arguments (either as the first positional argument or as a keyword argument like `path='...'`).
+
+4. If a valid path string is found, the path is transformed based on the configuration:
+
+   - If the path is **relative**, it is rewritten to:  
+     `base_path / <filename>.parquet`
+   - If the path is an **S3 URI** and `s3_rewrite_prefix` is provided, it is rewritten to:  
+     `<s3_rewrite_prefix>/<filename>.parquet`
+   - If the path is **absolute** (e.g., `/data/file.parquet` or starts with `s3://`) and does not match the rewrite criteria, it is left untouched.
 
 5. It replaces the original path node in the AST with a new node containing the modified path string.
 
-6. Finally, it converts the modified AST back into Python code string.
+6. Finally, the modified AST is converted back into a Python code string using `ast.unparse()` (Python 3.9+).
 
 ## Limitations
-- **Call Pattern Specificity:** It currently only identifies calls where the final method name is exactly parquet. It won't recognize patterns like spark.read.format("parquet").load("path"). Extending this would require more complex AST analysis.
 
-- **String Literals Only:** Only rewrites paths that are provided as direct string literals (e.g., 'path/to/file', "other/path"). It ignores paths stored in variables, constructed via f-strings, or returned by function calls.
+- **Call Pattern Specificity:** Only identifies calls where the method name is directly `.parquet(...)`. It does **not** currently support more dynamic usage like `spark.read.format("parquet").load("...")`. Extending this requires deeper AST pattern matching.
 
-- **Heuristic Read/Write Detection:** The identification of 'read' vs 'write' operations is based on checking for read or write in the attribute chain leading to the .parquet call. This covers common Spark/Pandas usage but might not be universally accurate for all libraries or custom code structures.
+- **String Literals Only:** Only rewrites paths passed as **direct string literals** (e.g., `'path/to/file'`, `"data/file"`). It **ignores** paths built via variables, f-strings, or function returns.
 
-- **AST Unparsing:** Relies on ast.unparse (Python 3.9+) or potentially a backport like astunparse for older versions to generate the output code. Minor formatting differences compared to the original code might occur.
+- **Heuristic Read/Write Detection:** Read vs. write detection is **heuristic**, based on checking if `read` or `write` exists in the call chain. While it works for typical Spark/Pandas patterns, it might not apply universally.
+
+- **AST Unparsing:** Relies on `ast.unparse` (Python 3.9+) to reconstruct the modified code. If using Python <3.9, consider using [`astunparse`](https://pypi.org/project/astunparse/). Minor formatting differences in the output code may occur.
 
 ## Contributing
-Contributions are welcome! Please open an issue or submit a pull request on GitHub.
+
+Contributions are welcome! If you encounter a bug or have an enhancement idea, feel free to [open an issue](https://github.com/dmux/parquet-path-rewriter/issues) or submit a pull request.
 
 ## License
+
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
