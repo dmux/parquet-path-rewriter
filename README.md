@@ -3,20 +3,47 @@
 [![PyPI version](https://badge.fury.io/py/parquet-path-rewriter.svg)](https://badge.fury.io/py/parquet-path-rewriter)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A Python library to automatically rewrite relative Parquet file paths within Python code strings. It uses Abstract Syntax Tree (AST) manipulation to find calls like `spark.read.parquet('relative/path')` or `df.write.parquet(path='other/path')` and prepends a specified base directory path, making them absolute _within that base context_.
+A Python library to automatically rewrite Parquet file paths within Python code strings.  
+It uses Abstract Syntax Tree (AST) manipulation to find calls like:
 
-This is useful in scenarios where code needs to be adapted to run in different environments (e.g., local vs. cluster) where data root directories differ, without modifying the original relative path logic directly in the source code strings _before_ execution or analysis.
+- `spark.read.parquet('relative/path')`
+- `df.write.parquet(path='other/path')`
+
+and rewrites the path to match a desired environment—either a **local base directory** or a **custom S3 prefix**—without modifying the original source code manually.
+
+This is especially useful when adapting code for different runtime environments (e.g., local, cloud, production clusters), allowing you to inject absolute paths or cloud paths without altering the original logic.
+
+---
 
 ## Features
 
-- Identifies `.parquet()` method calls (heuristic based on common Spark/Pandas patterns like `read.parquet` and `write.parquet`).
-- Rewrites relative string literal paths passed as the first positional argument or using the `path=` keyword argument.
-- Prepends a specified `base_path` (string or `pathlib.Path`).
-- Ignores absolute paths.
-- Ignores paths that are not string literals (e.g., variables, f-strings).
-- Keeps track of which paths were rewritten (original -> new mapping).
-- Identifies original paths used in likely _read_ operations.
-- Uses Python's `ast` module for safe code transformation.
+- ✅ Detects `.parquet()` method calls using heuristic pattern matching (e.g., `.read.parquet()`, `.write.parquet()`).
+- 🔍 Rewrites paths passed as:
+  - First positional argument: `parquet('path/to/file')`
+  - Keyword argument: `parquet(path='path/to/file')`
+- 📦 Automatically appends `.parquet` if the original path omits the extension.
+- 📁 Prepends a local `base_path` (string or `pathlib.Path`) for file system rewrites.
+- ☁️ Optionally rewrites `s3://...` URIs to a new `s3_rewrite_prefix`, resulting in:  
+  `s3://bucket/tmp/data/<filename>.parquet`
+- 🛡️ Ignores:
+  - Absolute paths (`/data/file.parquet`, `s3://bucket/...`) unless explicitly rewritten via S3 prefix
+  - Non-literal paths (e.g., variables, f-strings, function calls)
+- 🔄 Keeps track of:
+  - Rewritten paths as `{ original_path: new_path }`
+  - Input paths (read operations) for metadata or lineage tracking
+- 🧠 Safely rewrites code using Python’s built-in `ast` module
+- 📜 Supports fallback to `astunparse` (for Python < 3.9) if `ast.unparse` is unavailable
+- ⚠️ Handles internal edge cases:
+  - Ensures `args` are mutable lists before rewriting
+  - Prints warnings when path rewriting fails due to invalid characters or OS restrictions
+
+---
+
+## Use Case Examples
+
+- Adapt hardcoded Spark code to run in different environments (e.g., dev, test, prod)
+- Convert relative paths in notebooks to absolute S3 URIs before execution
+- Preprocess source code strings in LLMs, code linters, or static analyzers
 
 ## Installation
 
@@ -30,7 +57,6 @@ The primary way to use the library is through the rewrite_parquet_paths_in_code 
 
 ```python
 from pathlib import Path
-
 # Make sure src is in path if running directly without installation
 # sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
 
