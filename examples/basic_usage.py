@@ -36,6 +36,12 @@ final_df.write.mode("overwrite").parquet(path="final_output/report_data") # Uses
 # Example with an absolute path (should not be changed)
 logs_df = spark.read.parquet("/mnt/shared/logs/app_logs.parquet")
 
+# S3 example (should be rewritten)
+s3_df = spark.read.parquet("s3://mybucket/data/2023/spark_logs")
+
+# Write to S3 (should be rewritten)
+s3_df.write.mode("overwrite").parquet("s3://mybucket/output/processed_logs")
+
 print("ETL process finished.")
 """
 
@@ -45,6 +51,8 @@ print("ETL process finished.")
 # This would typically be determined by your execution environment or configuration
 # Use absolute paths for clarity
 data_root_directory = Path("/user/project/data").resolve()
+
+s3_rewrite_prefix = "s3://newbucket/data/2023"
 
 print("-" * 30)
 print(f"Base Path: {data_root_directory}")
@@ -56,7 +64,7 @@ print("-" * 30)
 try:
     # Call the library function to rewrite the code
     modified_code, rewritten_map, identified_inputs = rewrite_parquet_paths_in_code(
-        code_string=original_python_code, base_path=data_root_directory
+        code_string=original_python_code, base_path=data_root_directory, s3_rewrite_prefix=s3_rewrite_prefix
     )
 
     print("Modified Code:")
