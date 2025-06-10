@@ -117,3 +117,56 @@ def test_ast_unparse_not_available(monkeypatch):
         RuntimeError, match="ast.unparse is not available.*requires Python 3.9+"
     ):
         rewrite_parquet_paths_in_code(code, base_path="/tmp/test")
+
+
+def test_cli_inplace_permission_error(tmp_path, monkeypatch):
+    from src.parquet_path_rewriter.cli import main as cli_main
+    file_path = tmp_path / "script.py"
+    file_path.write_text("spark.read.parquet('d')")
+
+    open_orig = open
+
+    def open_mock(path, mode="r", *args, **kwargs):
+        if "w" in mode:
+            raise PermissionError("denied")
+        return open_orig(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", open_mock)
+
+    with pytest.raises(SystemExit):
+        cli_main([
+            str(file_path),
+            "--base-path",
+            str(tmp_path),
+            "--in-place",
+        ])
+
+
+def test_s3_rewrite_with_suffix():
+    code = "df = spark.read.parquet('s3://bucket/path/data.parquet')"
+    prefix = "s3://bucket/tmp"
+    expected_path = f"{prefix}/data.parquet"
+    expected_code = f"df = spark.read.parquet('{expected_path}')"
+
+    modified_code, rewritten, inputs = rewrite_parquet_paths_in_code(
+        code, base_path=BASE_TEST_PATH, s3_rewrite_prefix=prefix
+    )
+
+    assert normalize_code(modified_code) == normalize_code(expected_code)
+    assert rewritten == {"s3://bucket/path/data.parquet": expected_path}
+    assert inputs == ["s3://bucket/path/data.parquet"]
+
+
+def test_relative_path_with_parent_dir():
+    code = "df = spark.read.parquet('stage/../data/input')"
+    expected_path = str(BASE_TEST_PATH / "input.parquet")
+    expected_code = f"df = spark.read.parquet('{expected_path}')"
+
+    modified_code, rewritten, inputs = rewrite_parquet_paths_in_code(
+        code, BASE_TEST_PATH
+    )
+
+    assert normalize_code(modified_code) == normalize_code(expected_code)
+    assert rewritten == {"stage/../data/input": expected_path}
+    assert inputs == ["stage/../data/input"]
+
