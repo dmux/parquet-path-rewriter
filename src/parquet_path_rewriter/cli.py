@@ -1,3 +1,8 @@
+"""
+Parquet Path Rewriter CLI
+This script provides a command-line interface to rewrite parquet paths in Python source files.
+"""
+
 import argparse
 import logging
 import sys
@@ -9,13 +14,23 @@ logger = logging.getLogger(__name__)
 
 
 def main(argv=None):
+    """
+    Main entry point for the CLI.
+    Parses command-line arguments and rewrites parquet paths in the specified Python source file.
+    If the --in-place flag is set, it overwrites the original file;
+    otherwise, it prints the modified code.
+    """
     parser = argparse.ArgumentParser(
         description="Rewrite parquet paths in a Python source file"
     )
     parser.add_argument("file", help="Python source file to rewrite")
-    parser.add_argument("--base-path", required=True, help="Base directory for rewrites")
+    parser.add_argument(
+        "--base-path", required=True, help="Base directory for rewrites"
+    )
     parser.add_argument("--s3-prefix", help="S3 rewrite prefix")
-    parser.add_argument("-i", "--in-place", action="store_true", help="Rewrite file in place")
+    parser.add_argument(
+        "-i", "--in-place", action="store_true", help="Rewrite file in place"
+    )
 
     args = parser.parse_args(argv)
 

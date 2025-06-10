@@ -11,7 +11,7 @@ import ast
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 # Define a specific type for AST string constants for clarity
 logger = logging.getLogger(__name__)
@@ -122,6 +122,17 @@ class ParquetPathRewriter(ast.NodeTransformer):
         return path_arg_node, arg_index, is_keyword
 
     def visit_Call(self, node: ast.Call) -> ast.AST:
+        """
+        Visits a Call node in the AST and rewrites the path argument if it is a
+        call to a '.parquet()' method with a relative path.
+        Args:
+            node: The Call node to visit.
+        Returns:
+            The modified Call node with the rewritten path, or the original node
+            if no changes were made.
+        """
+
+        # Check if the node is a call to a parquet method
         if not self._is_parquet_call(node):
             return self.generic_visit(node)
 
