@@ -8,15 +8,20 @@ a helper function `rewrite_parquet_paths_in_code` for easier usage.
 """
 
 import ast
+import logging
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 # Define a specific type for AST string constants for clarity
+logger = logging.getLogger(__name__)
+
 AstStringConstant = (
     ast.Constant  # In Python 3.8+, ast.Constant replaces ast.Str, ast.Num etc.
 )
 
 
+@dataclass
 class ParquetPathRewriter(ast.NodeTransformer):
     """
     Traverses a Python Abstract Syntax Tree (AST) and rewrites string literal
@@ -32,22 +37,35 @@ class ParquetPathRewriter(ast.NodeTransformer):
         identified_inputs: A list of path strings used in read operations.
     """
 
-    def __init__(
-        self,
-        base_path: Path,
-        s3_rewrite_prefix: Optional[str] = None,
-    ):
-        if not isinstance(base_path, Path):
+    base_path: Path
+    s3_rewrite_prefix: Optional[str] = None
+    rewritten_paths: Dict[str, str] = field(default_factory=dict, init=False)
+    identified_inputs: List[str] = field(default_factory=list, init=False)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.base_path, Path):
             raise TypeError("base_path must be a pathlib.Path object")
-        self.base_path = base_path.resolve()
-        self.s3_rewrite_prefix = (
-            s3_rewrite_prefix.rstrip("/") if s3_rewrite_prefix else None
-        )
-        self.rewritten_paths: Dict[str, str] = {}
-        self.identified_inputs: List[str] = []
+        self.base_path = self.base_path.resolve()
+        if self.s3_rewrite_prefix:
+            self.s3_rewrite_prefix = self.s3_rewrite_prefix.rstrip("/")
 
     def _is_parquet_call(self, node: ast.Call) -> bool:
-        return isinstance(node.func, ast.Attribute) and node.func.attr == "parquet"
+        if isinstance(node.func, ast.Attribute):
+            if node.func.attr == "parquet":
+                return True
+            if node.func.attr in {"load", "save"}:
+                value = node.func.value
+                if isinstance(value, ast.Call):
+                    func = value.func
+                    if (
+                        isinstance(func, ast.Attribute)
+                        and func.attr == "format"
+                        and value.args
+                        and isinstance(value.args[0], AstStringConstant)
+                        and value.args[0].value == "parquet"
+                    ):
+                        return True
+        return False
 
     def _analyze_call_chain(self, node: ast.Call) -> Tuple[bool, bool]:
         is_read = False
@@ -55,9 +73,14 @@ class ParquetPathRewriter(ast.NodeTransformer):
         current_expr = node.func
         call_chain_parts: List[str] = []
 
-        while isinstance(current_expr, ast.Attribute):
-            call_chain_parts.insert(0, current_expr.attr)
-            current_expr = current_expr.value
+        while True:
+            if isinstance(current_expr, ast.Attribute):
+                call_chain_parts.insert(0, current_expr.attr)
+                current_expr = current_expr.value
+            elif isinstance(current_expr, ast.Call):
+                current_expr = current_expr.func
+            else:
+                break
 
         if isinstance(current_expr, ast.Name):
             call_chain_parts.insert(0, current_expr.id)
@@ -99,6 +122,17 @@ class ParquetPathRewriter(ast.NodeTransformer):
         return path_arg_node, arg_index, is_keyword
 
     def visit_Call(self, node: ast.Call) -> ast.AST:
+        """
+        Visits a Call node in the AST and rewrites the path argument if it is a
+        call to a '.parquet()' method with a relative path.
+        Args:
+            node: The Call node to visit.
+        Returns:
+            The modified Call node with the rewritten path, or the original node
+            if no changes were made.
+        """
+
+        # Check if the node is a call to a parquet method
         if not self._is_parquet_call(node):
             return self.generic_visit(node)
 
@@ -144,8 +178,10 @@ class ParquetPathRewriter(ast.NodeTransformer):
                         node.args[arg_index] = new_const_node
 
                 except (TypeError, ValueError) as e:
-                    print(
-                        f"Warning: Could not process path '{original_path_str}'. Error: {e}"
+                    logger.warning(
+                        "Could not process path '%s'. Error: %s",
+                        original_path_str,
+                        e,
                     )
 
         return self.generic_visit(node)
@@ -184,7 +220,7 @@ def rewrite_parquet_paths_in_code(
     try:
         tree = ast.parse(code_string, filename=filename)
     except SyntaxError as e:
-        print(f"Error parsing Python code: {e}")
+        logger.error("Error parsing Python code: %s", e)
         raise
 
     rewriter = ParquetPathRewriter(
