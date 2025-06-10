@@ -21,6 +21,8 @@ classifiers = [
 ]
 keywords = ["ast", "parquet", "rewrite", "refactor", "pyspark", "pandas"]
 dependencies = []
+[project.scripts]
+parquet-path-rewriter = "parquet_path_rewriter.cli:main"
 
 [project.urls]
 "Homepage" = "https://github.com/dmux/parquet-path-rewriter"
